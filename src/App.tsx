@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from './config/firebase';
+import { auth, db } from './config/firebase'; // Import db from firebase config
+import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore'; // Import Firestore functions
 import Login from './components/Login';
 import { getUserProfile } from './services/userService';
 import { UserData } from './types/user';
@@ -19,7 +20,10 @@ import {
   LogOut,
   FileEdit,
   Upload,
-  X
+  X,
+  Edit,
+  Trash2,
+  Save
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -49,10 +53,16 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [taskName, setTaskName] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [assignments, setAssignments] = useState<{ name: string; due: string }[]>([]);
+  const [assignments, setAssignments] = useState<{ id: string; name: string; due: string }[]>([]);
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+  const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(true); // State for loading assignments
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [pdfCount, setPdfCount] = useState<number | null>(null); // State for PDF count
+  const [streak, setStreak] = useState<number | null>(null); // State for learning streak
+  const [isPdfCountLoading, setIsPdfCountLoading] = useState(true); // State for loading PDF count
+  const [isStreakLoading, setIsStreakLoading] = useState(true); // State for loading streak
 
   // Reference for scrolling to sections
   const statsRef = useRef<HTMLDivElement>(null);
@@ -89,18 +99,134 @@ function App() {
       if (user) {
         setIsAuthenticated(true);
         setUsername(user.displayName?.split(' ')[0] || 'Student');
-        setProfilePic(user.photoURL || '');
+        setProfilePic(user.photoURL || ''); // Use Google account picture
+        console.log("Profile Pic URL:", user.photoURL); // Debug log
+        fetchPdfCount(user.uid); // Fetch PDF count when user is authenticated
+        fetchStreak(user.uid); // Fetch learning streak when user is authenticated
+        fetchAssignments(user.uid); // Fetch assignments when user is authenticated
       } else {
         setIsAuthenticated(false);
         setUsername('Student');
         setProfilePic('');
         setUserData(null);
+        setAssignments([]);
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
+
+  // Fetch PDF count from Firestore
+  const fetchPdfCount = async (userId: string) => {
+    try {
+      const docRef = doc(db, "users", userId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setPdfCount(data.pdfCount || 0);
+      }
+    } catch (error) {
+      console.error("Error fetching PDF count:", error);
+    } finally {
+      setIsPdfCountLoading(false);
+    }
+  };
+
+  // Increment PDF count in Firestore
+  const incrementPdfCount = async () => {
+    if (!auth.currentUser) return;
+    const userId = auth.currentUser.uid;
+    try {
+      const docRef = doc(db, "users", userId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        await updateDoc(docRef, {
+          pdfCount: (data.pdfCount || 0) + 1
+        });
+        fetchPdfCount(userId); // Fetch updated PDF count after incrementing
+      }
+    } catch (error) {
+      console.error("Error incrementing PDF count:", error);
+    }
+  };
+
+  // Fetch learning streak from Firestore
+  const fetchStreak = async (userId: string) => {
+    try {
+      const docRef = doc(db, "users", userId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const lastActive = data.lastActive ? new Date(data.lastActive.seconds * 1000) : null;
+        const currentStreak = data.streak || 0;
+
+        if (lastActive) {
+          const today = new Date();
+          const diffTime = Math.abs(today.getTime() - lastActive.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          if (diffDays === 1) {
+            setStreak(currentStreak + 1);
+            await updateDoc(docRef, {
+              streak: currentStreak + 1,
+              lastActive: new Date()
+            });
+          } else if (diffDays > 1) {
+            setStreak(1);
+            await updateDoc(docRef, {
+              streak: 1,
+              lastActive: new Date()
+            });
+          } else {
+            setStreak(currentStreak);
+          }
+        } else {
+          setStreak(1);
+          await updateDoc(docRef, {
+            streak: 1,
+            lastActive: new Date()
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching streak:", error);
+    } finally {
+      setIsStreakLoading(false);
+    }
+  };
+
+  // Fetch assignments from Firestore
+  const fetchAssignments = async (userId: string) => {
+    try {
+      const docRef = doc(db, "users", userId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setAssignments(data.assignments || []);
+      }
+    } catch (error) {
+      console.error("Error fetching assignments:", error);
+    } finally {
+      setIsAssignmentsLoading(false);
+    }
+  };
+
+  // Add or update assignment in Firestore
+  const saveAssignments = async (newAssignments: { id: string; name: string; due: string }[]) => {
+    if (!auth.currentUser) return;
+    const userId = auth.currentUser.uid;
+    try {
+      const docRef = doc(db, "users", userId);
+      await updateDoc(docRef, {
+        assignments: newAssignments
+      });
+      setAssignments(newAssignments);
+    } catch (error) {
+      console.error("Error saving assignments:", error);
+    }
+  };
 
   // Separate effect for loading user data
   useEffect(() => {
@@ -120,6 +246,17 @@ function App() {
     loadUserData();
   }, [isAuthenticated]);
 
+  // Fetch PDF count every second
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isAuthenticated && auth.currentUser) {
+      interval = setInterval(() => {
+        fetchPdfCount(auth.currentUser!.uid);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
   // Dashboard data
   const stats = [
     { 
@@ -137,15 +274,15 @@ function App() {
       color: 'bg-emerald-500' 
     },
     { 
-      title: 'Topics Mastered', 
-      value: '12', 
+      title: 'PDFs Uploaded', 
+      value: isPdfCountLoading ? 'Loading...' : pdfCount, 
       icon: Activity, 
-      change: '3 new topics', 
+      change: 'New PDFs uploaded', 
       color: 'bg-purple-500' 
     },
     { 
       title: 'Learning Streak', 
-      value: '7d', 
+      value: isStreakLoading ? 'Loading...' : `${streak}d`, 
       icon: Calendar, 
       change: 'Personal best!', 
       color: 'bg-pink-500' 
@@ -196,12 +333,40 @@ function App() {
     e.preventDefault();
     if (taskName && dueDate) {
       const newAssignment = {
+        id: Date.now().toString(),
         name: taskName,
         due: `Due on: ${new Date(dueDate).toLocaleDateString()}`
       };
-      setAssignments([...assignments, newAssignment]);
+      const updatedAssignments = [...assignments, newAssignment];
+      saveAssignments(updatedAssignments);
       handleModalClose();
     }
+  };
+
+  const handleEditAssignment = (id: string) => {
+    setEditingAssignmentId(id);
+    const assignment = assignments.find(a => a.id === id);
+    if (assignment) {
+      setTaskName(assignment.name);
+      setDueDate(assignment.due.replace('Due on: ', ''));
+      setIsModalOpen(true);
+    }
+  };
+
+  const handleSaveEditAssignment = () => {
+    if (editingAssignmentId) {
+      const updatedAssignments = assignments.map(assignment =>
+        assignment.id === editingAssignmentId ? { ...assignment, name: taskName, due: `Due on: ${new Date(dueDate).toLocaleDateString()}` } : assignment
+      );
+      saveAssignments(updatedAssignments);
+      setEditingAssignmentId(null);
+      handleModalClose();
+    }
+  };
+
+  const handleDeleteAssignment = (id: string) => {
+    const updatedAssignments = assignments.filter(assignment => assignment.id !== id);
+    saveAssignments(updatedAssignments);
   };
 
   // Mobile menu handling
@@ -286,11 +451,14 @@ function App() {
               src={profilePic || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"}
               alt="Profile"
               className="h-10 w-10 rounded-full border-2 border-gray-700"
+              onError={(e) => {
+                e.currentTarget.src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80";
+              }}
             />
             {isSidebarOpen && (
               <div>
                 <p className="text-sm font-medium">{username}</p>
-                <p className="text-xs text-gray-400">Student at SST</p>
+                <p className="text-xs text-gray-400">Student</p>
               </div>
             )}
           </div>
@@ -498,9 +666,6 @@ function App() {
               >
                 New Task
               </button>
-              <button className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors">
-                Add to Calendar
-              </button>
             </div>
           </div>
 
@@ -527,14 +692,36 @@ function App() {
             {/* Current Assignments */}
             <div className="bg-gray-800 rounded-xl border border-gray-700 p-4 lg:p-6">
               <h2 className="text-lg font-semibold mb-4">Current Assignments</h2>
-              <div className="space-y-4">
-                {assignments.map((assignment, index) => (
-                  <div key={index} className="p-4 bg-gray-700 rounded-lg">
-                    <div className="font-medium">{assignment.name}</div>
-                    <div className="text-sm text-gray-400">{assignment.due}</div>
-                  </div>
-                ))}
-              </div>
+              {isAssignmentsLoading ? (
+                <div className="flex justify-center items-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {assignments.map((assignment, index) => (
+                    <div key={index} className="p-4 bg-gray-700 rounded-lg flex justify-between items-center">
+                      <div>
+                        <div className="font-medium">{assignment.name}</div>
+                        <div className="text-sm text-gray-400">{assignment.due}</div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => handleEditAssignment(assignment.id)}
+                          className="p-2 rounded-lg hover:bg-gray-600 transition-colors"
+                        >
+                          <Edit className="h-5 w-5 text-gray-400" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteAssignment(assignment.id)}
+                          className="p-2 rounded-lg hover:bg-gray-600 transition-colors"
+                        >
+                          <Trash2 className="h-5 w-5 text-gray-400" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Study Analytics */}
@@ -650,8 +837,8 @@ function App() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Add New Task</h2>
-            <form onSubmit={handleTaskSubmit}>
+            <h2 className="text-xl font-semibold mb-4">{editingAssignmentId ? 'Edit Task' : 'Add New Task'}</h2>
+            <form onSubmit={editingAssignmentId ? handleSaveEditAssignment : handleTaskSubmit}>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-400 mb-2">
                   Task Name
@@ -688,7 +875,7 @@ function App() {
                   type="submit"
                   className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors"
                 >
-                  Add Task
+                  {editingAssignmentId ? 'Save Changes' : 'Add Task'}
                 </button>
               </div>
             </form>
