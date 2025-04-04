@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import "./Quiz.css";
 import { FileText, X, CheckCircle, FolderOpen, Send } from 'lucide-react';
-import { auth, db } from './config/firebase'; // Import db from firebase config
+import { auth, db, getToken } from './config/firebase'; // Import db from firebase config
 import { doc, updateDoc, getDoc } from 'firebase/firestore'; // Import Firestore functions
+import { getIdToken } from "firebase/auth";
 
 const baseUrl = 'https://sairams-m1pro-system.tail4ef781.ts.net';
 
@@ -82,6 +83,9 @@ const Quiz = () => {
 
       const uploadResult = await fetch(`${baseUrl}/api/upload?id=${encodeURIComponent(conversationId)}`, {
         method: "POST",
+        headers: {
+          "Authorization": `Bearer ${await getToken()}`,
+        },
         body: formData,
       });
 
@@ -101,6 +105,7 @@ const Quiz = () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Authorization": `Bearer ${await getToken()}`,
           },
           body: JSON.stringify({
             id: conversationId,
@@ -173,6 +178,7 @@ const Quiz = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${await getToken()}`,
         },
         body: JSON.stringify({
           id: conversationId,
