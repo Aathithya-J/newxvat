@@ -4,7 +4,7 @@ import { FileText, X, CheckCircle, FolderOpen, Send } from 'lucide-react';
 import { auth, db, getToken } from './config/firebase'; // Import db from firebase config
 import { doc, updateDoc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 
-const baseUrl = 'https://sairams-m1pro-system.tail4ef781.ts.net';
+const baseUrl = 'http://localhost:8000'; // Replace with your actual base URL
 
 const Submit = () => {
   const [file, setFile] = useState<File | null>(null);

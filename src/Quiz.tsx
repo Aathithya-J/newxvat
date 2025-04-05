@@ -3,9 +3,8 @@ import "./Quiz.css";
 import { FileText, X, CheckCircle, FolderOpen, Send } from 'lucide-react';
 import { auth, db, getToken } from './config/firebase'; // Import db from firebase config
 import { doc, updateDoc, getDoc } from 'firebase/firestore'; // Import Firestore functions
-import { getIdToken } from "firebase/auth";
 
-const baseUrl = 'https://sairams-m1pro-system.tail4ef781.ts.net';
+const baseUrl = 'http://127.0.0.1:8000';
 
 const Quiz = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -88,6 +87,8 @@ const Quiz = () => {
         },
         body: formData,
       });
+
+      console.log(uploadResult);
 
       if (uploadResult.ok) {
         const uploadData = await uploadResult.json();
