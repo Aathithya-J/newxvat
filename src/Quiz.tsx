@@ -4,7 +4,7 @@ import { FileText, X, CheckCircle, FolderOpen, Send } from 'lucide-react';
 import { auth, db } from './config/firebase'; // Import db from firebase config
 import { doc, updateDoc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 
-const baseUrl = 'https://sairams-m1pro-system.tail4ef781.ts.net';
+const baseUrl = 'http://127.0.0.1:8000';
 
 const Quiz = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -104,7 +104,18 @@ const Quiz = () => {
           },
           body: JSON.stringify({
             id: conversationId,
-            message: "Generate a bunch of multiple-choice questions and their answers."
+            message: `Generate 5 multiple-choice questions based on the uploaded PDF content. Format as follows:
+
+1. [Question text]
+a) [Option text]
+b) [Option text]
+c) [Option text]
+d) [Option text]
+
+2. [Question text]
+...and so on.
+
+Keep questions clearly separated with blank lines.`
           }),
         });
 
@@ -112,26 +123,38 @@ const Quiz = () => {
           const generateData = await generateResult.json();
           console.log("Generate Data:", generateData);
           if (generateData.status === "success") {
-            // Split the text into questions and format them
             const text = generateData.message;
-            console.log("Raw message:", text); // Debug log
-            // Split by numbered questions (e.g., "1.", "2.", etc.)
-            const questionTexts = text.split(/\d+\./).filter((q: string) => q.trim());
+            console.log("Raw message:", text);
             
-            const formattedQuestions = questionTexts.map((questionText: string) => {
-              // Split the question text and options
-              const lines = questionText.trim().split('\n').filter(line => line.trim());
-              // First line is the question
-              const questionLine = lines[0];
-              // Get the options (lines starting with a), b), c), d))
-              const options = lines.slice(1).filter(line => /^[a-d]\)/.test(line.trim()));
+            // First split by question number pattern
+            const questionBlocks = text.split(/\n\s*\d+\.\s+/).filter((block : string) => block.trim());
+            
+            const formattedQuestions = [];
+            
+            // Process each question block
+            for (let i = 0; i < questionBlocks.length; i++) {
+              const block = questionBlocks[i];
+              const lines = block.split('\n').filter((line : string) => line.trim());
               
-              return {
-                text: questionLine.trim(),
-                options: options.map(opt => opt.trim())
-              };
-            });
-
+              let questionText = lines[0].trim();
+              if (questionText.match(/^\d+\./)) {
+                questionText = questionText.replace(/^\d+\.\s*/, '');
+              }
+              
+              // Find option lines (starting with a), b), etc.)
+              const options = [];
+              for (let j = 0; j < lines.length; j++) {
+                if (/^[a-d]\)/.test(lines[j].trim())) {
+                  options.push(lines[j].trim());
+                }
+              }
+              
+              formattedQuestions.push({
+                text: questionText,
+                options: options
+              });
+            }
+            
             console.log("Formatted Questions:", formattedQuestions);
             setQuestions(formattedQuestions);
           } else {
@@ -209,6 +232,33 @@ const Quiz = () => {
     }
 
     return `${size.toFixed(2)} ${units[unitIndex]}`;
+  };
+
+  // Question component for better display
+  const QuestionComponent = ({ question, index, selectedAnswer, onAnswerChange }: 
+    { question: any, index: number, selectedAnswer: string, onAnswerChange: (index: number, answer: string) => void }) => {
+    return (
+      <div className="bg-gray-700 rounded-lg p-6 mb-6">
+        <h4 className="text-xl font-medium text-gray-100 mb-4">
+          {index + 1}. {question.text}
+        </h4>
+        <div className="space-y-3">
+          {question.options.map((option: string, optionIndex: number) => (
+            <label key={optionIndex} className="flex items-start p-3 bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors">
+              <input
+                type="radio"
+                name={`question-${index}`}
+                value={option}
+                checked={selectedAnswer === option}
+                onChange={() => onAnswerChange(index, option)}
+                className="mt-1 h-4 w-4 text-indigo-600"
+              />
+              <span className="ml-3 text-gray-100">{option}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -316,30 +366,19 @@ const Quiz = () => {
         {/* Questions Display */}
         {questions.length > 0 && (
           <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mt-6">
-            <h3 className="text-lg font-semibold text-gray-100 mb-4">Questions</h3>
+            <h3 className="text-xl font-bold text-gray-100 mb-6">Quiz Questions</h3>
             {questions.map((question, index) => (
-              <div key={index} className="mb-4">
-                <p className="text-gray-100 mb-2">{question.text}</p>
-                {question.options.map((option: string, optionIndex: number) => (
-                  <div key={optionIndex} className="mb-2">
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name={`question-${index}`}
-                        value={option}
-                        checked={answers[index] === option}
-                        onChange={() => handleAnswerChange(index, option)}
-                        className="form-radio h-4 w-4 text-indigo-600 transition duration-150 ease-in-out"
-                      />
-                      <span className="ml-2 text-gray-100">{option}</span>
-                    </label>
-                  </div>
-                ))}
-              </div>
+              <QuestionComponent
+                key={index}
+                question={question}
+                index={index}
+                selectedAnswer={answers[index]}
+                onAnswerChange={handleAnswerChange}
+              />
             ))}
             <button
               onClick={handleSubmitAnswers}
-              className="w-full px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors font-medium flex items-center justify-center gap-2"
+              className="w-full px-4 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors font-medium flex items-center justify-center gap-2"
             >
               <Send className="w-5 h-5" />
               Submit Answers
