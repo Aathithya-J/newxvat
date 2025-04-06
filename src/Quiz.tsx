@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import "./Quiz.css";
 import { FileText, X, CheckCircle, FolderOpen, Send } from 'lucide-react';
-import { auth, db } from './config/firebase'; // Import db from firebase config
+import { auth, db, getToken } from './config/firebase'; // Import db from firebase config
 import { doc, updateDoc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 
 const baseUrl = 'http://127.0.0.1:8000';
@@ -82,8 +82,13 @@ const Quiz = () => {
 
       const uploadResult = await fetch(`${baseUrl}/api/upload?id=${encodeURIComponent(conversationId)}`, {
         method: "POST",
+        headers: {
+          "Authorization": `Bearer ${await getToken()}`,
+        },
         body: formData,
       });
+
+      console.log(uploadResult);
 
       if (uploadResult.ok) {
         const uploadData = await uploadResult.json();
@@ -101,6 +106,7 @@ const Quiz = () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Authorization": `Bearer ${await getToken()}`,
           },
           body: JSON.stringify({
             id: conversationId,
@@ -196,6 +202,7 @@ Keep questions clearly separated with blank lines.`
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${await getToken()}`,
         },
         body: JSON.stringify({
           id: conversationId,

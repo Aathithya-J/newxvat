@@ -28,3 +28,10 @@ export const analytics = getAnalytics(app);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export async function getToken() {
+  if (auth.currentUser) {
+    return await auth.currentUser.getIdToken();
+  }
+  throw new Error("User not authenticated");
+}
