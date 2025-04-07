@@ -15,15 +15,6 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-
-async function getToken() {
-  if (auth.currentUser) {
-    return await auth.currentUser.getIdToken();
-  }
-  throw new Error("User not authenticated");
-}
-
-
 export const analytics = getAnalytics(app);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
