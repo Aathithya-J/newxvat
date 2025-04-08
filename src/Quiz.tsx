@@ -4,7 +4,7 @@ import { FileText, X, CheckCircle, FolderOpen, Send } from 'lucide-react';
 import { auth, db, getToken } from './config/firebase'; // Import db from firebase config
 import { doc, updateDoc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 
-const baseUrl = 'http://127.0.0.1:8000';
+const baseUrl = 'https://sairams-m1pro-system.tail4ef781.ts.net';
 
 const Quiz = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -15,7 +15,10 @@ const Quiz = () => {
   const [conversationId, setConversationId] = useState("");
   const [questions, setQuestions] = useState<any[]>([]);
   const [answers, setAnswers] = useState<{ [key: number]: string }>({});
+  const [correctAnswers, setCorrectAnswers] = useState<{ [key: number]: string }>({});
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  // Removed unused 'score' state
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -110,18 +113,20 @@ const Quiz = () => {
           },
           body: JSON.stringify({
             id: conversationId,
-            message: `Generate 5 multiple-choice questions based on the uploaded PDF content. Format as follows:
+            message: `Generate 5 multiple-choice questions based on the uploaded PDF content. 
+For each question, clearly mark the correct answer. Do not mention anything else but the sample below. Format as follows:
 
 1. [Question text]
 a) [Option text]
 b) [Option text]
 c) [Option text]
 d) [Option text]
+Correct: [Write the full text of the correct option]
 
 2. [Question text]
-...and so on.
+... and so on.
 
-Keep questions clearly separated with blank lines.`
+Make sure to include "Correct:" after each question's options.`
           }),
         });
 
@@ -132,37 +137,44 @@ Keep questions clearly separated with blank lines.`
             const text = generateData.message;
             console.log("Raw message:", text);
             
-            // First split by question number pattern
-            const questionBlocks = text.split(/\n\s*\d+\.\s+/).filter((block : string) => block.trim());
+            // Split by question number pattern
+            const questionBlocks = text.split(/\n\s*\d+\.\s+/).filter((block: string) => block.trim());
             
             const formattedQuestions = [];
+            const correctAnswers: { [key: number]: string } = {};
             
             // Process each question block
             for (let i = 0; i < questionBlocks.length; i++) {
               const block = questionBlocks[i];
-              const lines = block.split('\n').filter((line : string) => line.trim());
+              const parts = block.split('\nCorrect:').map((part: string) => part.trim());
+              const questionPart = parts[0];
+              const correctAnswer = parts[1]?.trim();
+              
+              const lines = questionPart.split('\n').filter((line: string) => line.trim());
               
               let questionText = lines[0].trim();
               if (questionText.match(/^\d+\./)) {
                 questionText = questionText.replace(/^\d+\.\s*/, '');
               }
               
-              // Find option lines (starting with a), b), etc.)
-              const options = [];
-              for (let j = 0; j < lines.length; j++) {
-                if (/^[a-d]\)/.test(lines[j].trim())) {
-                  options.push(lines[j].trim());
-                }
-              }
+              // Find option lines
+              const options = lines.filter((line: string) => /^[a-d]\)/.test(line.trim()));
               
               formattedQuestions.push({
                 text: questionText,
                 options: options
               });
+
+              if (correctAnswer) {
+                correctAnswers[i] = correctAnswer;
+              }
             }
             
             console.log("Formatted Questions:", formattedQuestions);
+            console.log("Correct Answers:", correctAnswers);
             setQuestions(formattedQuestions);
+            setCorrectAnswers(correctAnswers);
+            setShowResults(false);
           } else {
             setModalMessage("Generation failed: " + generateData.message);
             setShowModal(true);
@@ -196,37 +208,21 @@ Keep questions clearly separated with blank lines.`
     }));
   };
 
-  const handleSubmitAnswers = async () => {
-    try {
-      const result = await fetch(`${baseUrl}/api/submit-answers`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${await getToken()}`,
-        },
-        body: JSON.stringify({
-          id: conversationId,
-          answers: answers,
-        }),
-      });
+  const handleSubmitAnswers = () => {
+    let correctCount = 0;
+    const totalQuestions = Object.keys(correctAnswers).length;
 
-      if (result.ok) {
-        const data = await result.json();
-        if (data.status === "success") {
-          setModalMessage("Quiz submitted successfully!");
-          setShowModal(true);
-        } else {
-          setModalMessage("Submission failed: " + data.message);
-          setShowModal(true);
-        }
-      } else {
-        setModalMessage("Submission failed: " + result.statusText);
-        setShowModal(true);
+    Object.entries(answers).forEach(([index, answer]) => {
+      if (answer === correctAnswers[Number(index)]) {
+        correctCount++;
       }
-    } catch (error) {
-      setModalMessage("Submission failed: " + (error as Error).message);
-      setShowModal(true);
-    }
+    });
+
+    const scorePercentage = (correctCount / totalQuestions) * 100;
+    // Removed setting 'score' as it is unused
+    setShowResults(true);
+    setModalMessage(`Your score: ${scorePercentage.toFixed(1)}%`);
+    setShowModal(true);
   };
 
   const formatFileSize = (size: number) => {
@@ -250,19 +246,41 @@ Keep questions clearly separated with blank lines.`
           {index + 1}. {question.text}
         </h4>
         <div className="space-y-3">
-          {question.options.map((option: string, optionIndex: number) => (
-            <label key={optionIndex} className="flex items-start p-3 bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors">
-              <input
-                type="radio"
-                name={`question-${index}`}
-                value={option}
-                checked={selectedAnswer === option}
-                onChange={() => onAnswerChange(index, option)}
-                className="mt-1 h-4 w-4 text-indigo-600"
-              />
-              <span className="ml-3 text-gray-100">{option}</span>
-            </label>
-          ))}
+          {question.options.map((option: string, optionIndex: number) => {
+            const isCorrectOption = option.trim() === correctAnswers[index]?.trim();
+            const isSelected = option === selectedAnswer;
+            const isWrong = showResults && isSelected && !isCorrectOption;
+            
+            return (
+              <label 
+                key={optionIndex} 
+                className={`flex items-start p-3 rounded-lg cursor-pointer transition-colors
+                  ${!showResults ? 'bg-gray-800 hover:bg-gray-600' : ''}
+                  ${showResults && isCorrectOption ? 'bg-green-700' : ''}
+                  ${isWrong ? 'bg-red-700' : ''}
+                  ${!showResults && isSelected ? 'ring-2 ring-indigo-500' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name={`question-${index}`}
+                  value={option}
+                  checked={isSelected}
+                  onChange={() => !showResults && onAnswerChange(index, option)}
+                  disabled={showResults}
+                  className="mt-1 h-4 w-4 text-indigo-600"
+                />
+                <div className="ml-3 flex-1">
+                  <span className="text-gray-100">{option}</span>
+                  {showResults && (
+                    <span className={`ml-2 ${isCorrectOption ? 'text-green-300' : 'text-red-300'}`}>
+                      {isCorrectOption && '(Correct Answer)'}
+                      {isWrong && `(Wrong - Correct answer was: ${correctAnswers[index]})`}
+                    </span>
+                  )}
+                </div>
+              </label>
+            );
+          })}
         </div>
       </div>
     );
